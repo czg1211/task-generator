@@ -1,0 +1,30 @@
+version: '3.13'
+
+services:
+  task-service:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=task_service
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app
+    command: python run.py
+
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=task_service
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

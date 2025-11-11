@@ -1,0 +1,17 @@
+[project]
+name = "ai-task-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "apscheduler>=3.11.1",
+    "croniter>=6.0.0",
+    "fastapi>=0.121.1",
+    "flask-sqlalchemy>=3.1.1",
+    "loguru>=0.7.3",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.2.1",
+    "pytz>=2025.2",
+    "uvicorn>=0.38.0",
+]
