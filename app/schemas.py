@@ -4,9 +4,11 @@ from datetime import datetime
 from enum import Enum
 
 
+# 定义任务类型枚举（与模型中的枚举对应）
 class TaskType(str, Enum):
     SCHEDULED = "scheduled"
     ONE_TIME = "one_time"
+
 
 # PolicyConfig Schemas
 class PolicyConfigBase(BaseModel):
@@ -34,7 +36,7 @@ class PolicyTaskGenConfigBase(BaseModel):
     policy_id: str
     task_gen_sql: str
     cron_expression: str
-    task_type: str  # 'scheduled' or 'one_time'
+    task_type: TaskType  # 使用枚举类型
 
 
 class PolicyTaskGenConfigCreate(PolicyTaskGenConfigBase):
@@ -74,7 +76,7 @@ class TaskSource(TaskSourceBase):
 # SeedTask Schemas
 class SeedTaskBase(BaseModel):
     policy_id: str
-    task_type: str
+    task_type: TaskType  # 使用枚举类型
     task_params: Dict[str, Any]
 
 

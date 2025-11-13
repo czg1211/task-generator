@@ -1,12 +1,15 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UniqueConstraint, Enum
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UniqueConstraint, Enum
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from app.database import Base
 import enum
 
+
+# 定义任务类型枚举
 class TaskType(enum.Enum):
     SCHEDULED = "scheduled"  # 定时任务
-    ONE_TIME = "one_time"    # 一次性任务
+    ONE_TIME = "one_time"  # 一次性任务
+
 
 class PolicyConfig(Base):
     __tablename__ = "policy_configs"
@@ -15,6 +18,7 @@ class PolicyConfig(Base):
     policy_id = Column(String(100), unique=True, index=True, nullable=False)
     data_source_type = Column(String(50), nullable=False)
     is_enabled = Column(Boolean, default=True)
+    description = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -26,7 +30,7 @@ class PolicyTaskGenConfig(Base):
     policy_id = Column(String(100), nullable=False, index=True)
     task_gen_sql = Column(Text, nullable=False)
     cron_expression = Column(String(100), nullable=False)
-    task_type = Column(Enum(TaskType), nullable=False)  # 'scheduled' or 'one_time'
+    task_type = Column(Enum(TaskType), nullable=False)  # 使用枚举类型
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -52,7 +56,7 @@ class SeedTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     policy_id = Column(String(100), nullable=False, index=True)
-    task_type = Column(Enum(TaskType), nullable=False)  # 'scheduled' or 'one_time'
+    task_type = Column(Enum(TaskType), nullable=False)  # 使用枚举类型
     task_params = Column(JSONB, nullable=False)  # 任务参数
     is_consumed = Column(Boolean, default=False)  # 是否已被消费（针对一次性任务）
     created_at = Column(DateTime(timezone=True), server_default=func.now())

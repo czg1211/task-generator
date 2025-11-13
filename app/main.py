@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-
-from app.utils.logger import get_public_logger
 from app.database import create_tables
 from app.api.endpoints import router as api_router
+import logging
 
-logger = get_public_logger()
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

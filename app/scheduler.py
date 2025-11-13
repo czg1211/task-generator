@@ -1,20 +1,26 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
-from typing import Dict
+from app.database import create_db_session
 from app import crud
-from app.utils.logger import get_public_logger
 from app.services import TaskGenerationService
+import logging
+from typing import Dict, Any, Set
+from datetime import datetime
+import threading
+import time
 
-logger = get_public_logger()
+logger = logging.getLogger(__name__)
 
 
 class TaskScheduler:
-    def __init__(self, db_session: Session):
+    def __init__(self):
         self.scheduler = BackgroundScheduler()
-        self.db_session = db_session
-        self.task_service = TaskGenerationService(db_session)
         self.jobs: Dict[str, str] = {}  # policy_id -> job_id
+        self.last_check_time = datetime.now()
+        self.monitor_thread = None
+        self.monitor_running = False
+        self.lock = threading.Lock()
 
     def start(self):
         """启动调度器"""
@@ -22,8 +28,18 @@ class TaskScheduler:
             self.scheduler.start()
             logger.info("任务调度器已启动")
 
+            # 启动策略监控线程
+            self.monitor_running = True
+            self.monitor_thread = threading.Thread(target=self._monitor_policies, daemon=True)
+            self.monitor_thread.start()
+            logger.info("策略监控线程已启动")
+
     def stop(self):
         """停止调度器"""
+        self.monitor_running = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=5)
+
         if self.scheduler.running:
             self.scheduler.shutdown()
             logger.info("任务调度器已停止")
@@ -72,30 +88,101 @@ class TaskScheduler:
             logger.info(f"已移除策略任务: {policy_id}")
 
     def _execute_policy(self, policy_id: str):
-        """执行策略生成任务"""
+        """执行策略生成任务 - 每个任务使用独立的数据库会话"""
+        db = create_db_session()
         try:
-            policy_config = crud.get_policy_task_gen_config(self.db_session, policy_id)
+            task_service = TaskGenerationService(db)
+            policy_config = crud.get_policy_task_gen_config(db, policy_id)
             if policy_config:
+                # 检查策略是否启用
+                policy = crud.get_policy_config(db, policy_id)
+                if not policy or not policy.is_enabled:
+                    logger.info(f"策略 {policy_id} 已禁用，跳过执行")
+                    return
+
                 # 只执行定时任务
                 if policy_config.task_type.value == "scheduled":
-                    generated = self.task_service.generate_seed_tasks(policy_config)
+                    generated = task_service.generate_seed_tasks(policy_config)
                     logger.info(f"策略 {policy_id} 执行完成，生成 {generated} 个任务")
                 else:
                     logger.info(f"策略 {policy_id} 是一次性任务，跳过定时执行")
         except Exception as e:
             logger.error(f"执行策略 {policy_id} 失败: {str(e)}")
+        finally:
+            db.close()
+
+    def _monitor_policies(self):
+        """监控策略变化 - 使用独立的数据库会话"""
+        logger.info("开始监控策略变化")
+
+        while self.monitor_running:
+            try:
+                # 为监控线程创建独立的数据库会话
+                db = create_db_session()
+                try:
+                    # 获取当前所有策略配置
+                    current_policies = crud.get_policy_task_gen_configs(db)
+
+                    # 获取当前活跃的策略ID
+                    current_active_policies = set(self.jobs.keys())
+
+                    # 获取应该启用的策略ID
+                    should_be_active = set()
+                    for policy in current_policies:
+                        policy_config = crud.get_policy_config(db, policy.policy_id)
+                        if (policy_config and policy_config.is_enabled and
+                                policy.task_type.value == "scheduled"):
+                            should_be_active.add(policy.policy_id)
+
+                    # 添加新策略
+                    new_policies = should_be_active - current_active_policies
+                    for policy_id in new_policies:
+                        logger.info(f"检测到新策略上线: {policy_id}")
+                        policy_config = crud.get_policy_task_gen_config(db, policy_id)
+                        if policy_config:
+                            self.add_policy_job(policy_config)
+
+                    # 移除下线的策略
+                    removed_policies = current_active_policies - should_be_active
+                    for policy_id in removed_policies:
+                        logger.info(f"检测到策略下线: {policy_id}")
+                        self.remove_policy_job(policy_id)
+
+                finally:
+                    db.close()
+
+                # 每30秒检查一次（减少数据库压力）
+                for i in range(30):
+                    if not self.monitor_running:
+                        break
+                    time.sleep(1)
+
+            except Exception as e:
+                logger.error(f"策略监控出错: {str(e)}")
+                time.sleep(10)  # 出错后等待10秒再继续
 
     def load_all_policies(self):
-        """加载所有策略配置"""
-        policies = crud.get_enabled_policy_configs(self.db_session)
-        loaded_count = 0
+        """加载所有策略配置 - 使用独立的数据库会话"""
+        db = create_db_session()
+        try:
+            policies = crud.get_policy_task_gen_configs(db)
+            loaded_count = 0
 
-        for policy in policies:
-            if self.add_policy_job(policy):
-                loaded_count += 1
+            for policy in policies:
+                # 只加载启用的策略
+                policy_config = crud.get_policy_config(db, policy.policy_id)
+                if policy_config and policy_config.is_enabled:
+                    if self.add_policy_job(policy):
+                        loaded_count += 1
 
-        logger.info(f"已加载 {loaded_count} 个策略配置（{len(policies) - loaded_count} 个一次性任务）")
+            logger.info(f"已加载 {loaded_count} 个策略配置")
+        finally:
+            db.close()
 
     def get_job_count(self) -> int:
         """获取任务数量"""
         return len(self.scheduler.get_jobs())
+
+    def get_active_policies(self) -> Set[str]:
+        """获取当前活跃的策略ID"""
+        return set(self.jobs.keys())

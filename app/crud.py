@@ -1,6 +1,13 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from sqlalchemy import and_
 from app import models
+
+
+def create_db_session() -> Session:
+    """创建独立的数据库会话（用于后台线程）"""
+    from app.database import create_db_session as _create_db_session
+    return _create_db_session()
 
 # PolicyConfig CRUD
 def get_policy_configs(db: Session, skip: int = 0, limit: int = 100) -> List[models.PolicyConfig]:

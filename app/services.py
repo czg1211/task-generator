@@ -1,12 +1,10 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app import models
-from app import crud
+from app import crud, models  # 修正导入路径
 from typing import Dict, Any, List
+import logging
 
-from app.utils.logger import get_public_logger
-
-logger = get_public_logger()
+logger = logging.getLogger(__name__)
 
 
 class TaskGenerationService:
